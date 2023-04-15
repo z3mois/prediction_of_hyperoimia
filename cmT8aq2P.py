@@ -42,12 +42,3 @@ class SentenceBertTransformer:
 
         torch.cuda.empty_cache()
         return np.vstack(results)
-
-trf = SentenceBertTransformer(device="cuda")
-trf.load_model()
-
-def cosin_distance(word, sentense):
-    word_embeding = trf.transform(word)
-    sentense_embeding = trf.transform(sentense)
-    return np.dot(word_embeding, sentense_embeding) / (sum(sentense_embeding ** 2) * sum(word_embeding ** 2))
-print(cosin_distance("Я иду по лесу", "я иду"))
