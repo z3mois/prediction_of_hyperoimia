@@ -3,7 +3,7 @@ from tqdm import tqdm
 from chekers import includeTitleInWn, unambiguousDisplay, getKeyForId, getLemmaForSynsets 
 from classes import WikiSynset, display
 from collections import defaultdict
-
+from some_help_functions import stage_4_preprocessing
 
 def coolect_wiki_synset(pages, dictPageRedirect):
     """
@@ -144,7 +144,7 @@ def getting_candidates_for_stage_3(wiki3, dictWn, dictLemmaInIndex):
                                 dictSynsetId[synset.id].append(wiki3[indexElem])
     return dictSynsetId
 
-def resolution_of_ambiguity(sortCandidates, dictIdTitle, labse, dictDisplay, dictWn):
+def resolution_of_ambiguity_base_and_labse(sortCandidates, dictIdTitle, labse, dictDisplay, dictWn):
     badlemma = []
     baddenominator = []
     badmaxP = []
@@ -178,17 +178,17 @@ def resolution_of_ambiguity(sortCandidates, dictIdTitle, labse, dictDisplay, dic
                             badlemma.append(elem.page.title)
                         temp_distance = cosin_distance(lemmaSynset, elem.page.first_sentence, labse)
                         if denominator != 0:
-                            temp_p = numerator / denominator +  temp_distance 
+                            temp_p = (numerator / denominator +  temp_distance) / 2.0
                             dictSortCandidates[key].append((elem, temp_p))                           
                             if  temp_p > maxP:
                                 maxP = temp_p
                                 maxagrument = elem
                         else:
-                            if  temp_distance > maxP:
-                                maxP = temp_distance
+                            if  temp_distance / 2.0 > maxP:
+                                maxP = temp_distance / 2.0
                                 maxagrument = elem
                             baddenominator.append(elem.page.title)
-                            dictSortCandidates[key].append((elem, temp_distance))
+                            dictSortCandidates[key].append((elem, temp_distance / 2.0))
                 else:
                     badidWn.append(wn.get_senses(lemmaSynset)[0].id)
             else:
@@ -201,4 +201,107 @@ def resolution_of_ambiguity(sortCandidates, dictIdTitle, labse, dictDisplay, dic
             else:
                 badmaxP.append(key)   
     return dictSortCandidates, dictDisplay, len(badlemma), len(baddenominator), len(badmaxP), len(badsynsetlemma), len(badidWn)
-    
+
+
+def stage_4_base_and_labse(labse, dictDisplay, dictWn):
+    #проведем похожий третьему этапу обор кандидатов
+    dict_wordId_in_display_and_key, dictDisplay = stage_4_preprocessing(dictDisplay)
+    i = 0
+    for key, value in tqdm(dict_wordId_in_display_and_key.items(), desc = "Stage 4"):
+        lemmaSynset = getLemmaForSynsets(wn[str(key)].title.lower())
+        if lemmaSynset:
+            idWn = wn.get_senses(lemmaSynset)[0].id 
+            if "N" in idWn:
+                ctxS = dictWn[idWn].ctx
+                maxP = -1
+                arg_max = 0
+                for item in value:
+                    numerator = score(ctxS, item[1].ctxW)
+                    deniminator = 0.0
+                    for num in value:
+                        deniminator += score(ctxS, num[1].ctxW)
+                    p = cosin_distance(lemmaSynset, item[1].first_sentense, labse)
+                    if deniminator != 0.0:
+                        p += numerator/deniminator
+                    p = p / 2.0
+                    if p > maxP:
+                        maxP = p
+                        arg_max = item
+                if maxP != -1:
+                    dictDisplay[arg_max[0]] = arg_max[1]
+                else:
+                    i+=1
+    #                 print(f"denominator = 0 for all candidates for key:{key} synset is {wn[str(key)].title}")
+            else:
+                i+=1
+    #             print(f"lemma for key {key} is not noun, lemmaSynset is {lemmaSynset} for sysnet {wn[str(key)].title}")        
+        else:
+            i+=1
+    #         print(f"lemmaSynset for key {key} is none, synset is {wn[str(key)].title}")  
+    return dictDisplay  
+def resolution_of_ambiguity_labse(sortCandidates, dictIdTitle, labse, dictDisplay):
+    badmaxP = []
+    badsynsetlemma = []
+    badidWn = []
+    dictSortCandidates = {}
+    for key in tqdm(sortCandidates, desc="stage 3"):
+        if len(sortCandidates[key]) == 1:
+                w = sortCandidates[key][0]
+                p = display(w.page.id,w.page.revid,w.page.title,dictIdTitle[key], key,extractCtxW(w.page.links, w.page.categories), w.page.first_sentence)
+                dictDisplay[w.page.title]=p
+                dictSortCandidates[key] = [(sortCandidates[key][0], 1)]
+        else:
+            maxP = -1
+            maxagrument = 0
+            lemmaSynset = getLemmaForSynsets(dictIdTitle[key])
+            dictSortCandidates[key] = []
+            if lemmaSynset != "":
+                idWn = wn.get_senses(lemmaSynset)[0].id
+                if "N" in idWn: #почему-то иногда для синсета существительного сенс не существительное
+                    for elem in sortCandidates[key]:
+                        temp_distance = cosin_distance(lemmaSynset, elem.page.first_sentence, labse)
+                        dictSortCandidates[key].append((elem, temp_distance))                           
+                        if  temp_distance > maxP:
+                            maxP = temp_distance
+                            maxagrument = elem
+                else:
+                    badidWn.append(wn.get_senses(lemmaSynset)[0].id)
+            else:
+                badsynsetlemma.append(dictIdTitle[key])
+            if maxP != - 1:
+                w = maxagrument
+                p = display(w.page.id,w.page.revid,w.page.title,dictIdTitle[key], key,
+                            extractCtxW(w.page.links, w.page.categories), w.page.first_sentence)
+                dictDisplay[w.page.title]=p
+            else:
+                badmaxP.append(key)   
+    return dictSortCandidates, dictDisplay, 0, 0, len(badmaxP), len(badsynsetlemma), len(badidWn)
+
+def stage_4_labse(labse, dictDisplay):
+    #проведем похожий третьему этапу обор кандидатов
+    dict_wordId_in_display_and_key, dictDisplay = stage_4_preprocessing(dictDisplay)
+    i = 0
+    for key, value in tqdm(dict_wordId_in_display_and_key.items(), desc = "Stage 4"):
+        lemmaSynset = getLemmaForSynsets(wn[str(key)].title.lower())
+        if lemmaSynset:
+            idWn = wn.get_senses(lemmaSynset)[0].id 
+            if "N" in idWn:
+                maxP = -1
+                arg_max = 0
+                for item in value:
+                    p = cosin_distance(lemmaSynset, item[1].first_sentense, labse)
+                    if p > maxP:
+                        maxP = p
+                        arg_max = item
+                if maxP != -1:
+                    dictDisplay[arg_max[0]] = arg_max[1]
+                else:
+                    i+=1
+    #                 print(f"denominator = 0 for all candidates for key:{key} synset is {wn[str(key)].title}")
+            else:
+                i+=1
+    #             print(f"lemma for key {key} is not noun, lemmaSynset is {lemmaSynset} for sysnet {wn[str(key)].title}")        
+        else:
+            i+=1
+    #         print(f"lemmaSynset for key {key} is none, synset is {wn[str(key)].title}")  
+    return dictDisplay 

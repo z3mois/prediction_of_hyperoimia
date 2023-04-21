@@ -3,6 +3,8 @@ import pymorphy2
 from ruwordnet import RuWordNet
 from tqdm import tqdm
 import numpy as np
+from collections import defaultdict
+import time
 def my_split(x):
     s = ""
     for i in x:
@@ -74,5 +76,30 @@ def cosin_distance(word, sentense, labse):
     word_embeding = labse.transform(word)
     sentense_embeding = labse.transform(sentense)
     return np.dot(word_embeding, sentense_embeding) / (sum(sentense_embeding ** 2) * sum(word_embeding ** 2))
+
+def stage_4_preprocessing(dictDisplay):
+    #собираем отображения  связанные с одним wordId
+    print("Start stage_4_preprocessing")
+    start = time.time()
+    dict_wordId_in_display_and_key = defaultdict(list)
+    for key, value in dictDisplay.items():
+        dict_wordId_in_display_and_key[value.wordId].append((key,value))
+    i  = 0
+    for key, value in dict_wordId_in_display_and_key.items():
+        if len(value) > 1:
+            i+=len(value)
+    #удалим из dictDisplay повторяющиеся wordId
+    for key, value in dict_wordId_in_display_and_key.items():
+        if len(value) > 1:
+            for item in value:
+                del dictDisplay[item[0]]
+    #удалим из dict_wordId_in_display_and_key однозначные отображенния
+    dict_wordId_in_display_and_key_new = defaultdict(list)
+    for key, value in dict_wordId_in_display_and_key.items():
+        if len(value) > 1:
+            dict_wordId_in_display_and_key_new[key] = value
+    print(f"End of stage_4_preprocessing,timework is {time.time()- start}")
+    return dict_wordId_in_display_and_key_new, dictDisplay
+
 morph_analizer = pymorphy2.MorphAnalyzer()
 wn = RuWordNet(filename_or_session='D:\\lbase_data\\ruwordnet.db')
