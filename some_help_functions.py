@@ -76,7 +76,6 @@ def cosin_distance(word, sentense, labse):
     word_embeding = labse.transform(word)
     sentense_embeding = labse.transform(sentense)
     return np.dot(word_embeding, sentense_embeding) / (sum(sentense_embeding ** 2) * sum(word_embeding ** 2))
-
 def stage_4_preprocessing(dictDisplay):
     #собираем отображения  связанные с одним wordId
     print("Start stage_4_preprocessing")

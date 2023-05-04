@@ -4,7 +4,7 @@ from chekers import includeTitleInWn, unambiguousDisplay, getKeyForId, getLemmaF
 from classes import WikiSynset, display
 from collections import defaultdict
 from some_help_functions import stage_4_preprocessing
-
+import numpy as np
 def coolect_wiki_synset(pages, dictPageRedirect):
     """
         собиарем викисинсет
@@ -305,3 +305,88 @@ def stage_4_labse(labse, dictDisplay):
             i+=1
     #         print(f"lemmaSynset for key {key} is none, synset is {wn[str(key)].title}")  
     return dictDisplay 
+
+
+def resolution_of_ambiguity_fasttext(sortCandidates, dictIdTitle, model, dictDisplay):
+    badmaxP = []
+    badsynsetlemma = []
+    badidWn = []
+    dictSortCandidates = {}
+    for key in tqdm(sortCandidates, desc="stage 3"):
+        if len(sortCandidates[key]) == 1:
+                w = sortCandidates[key][0]
+                p = display(w.page.id,w.page.revid,w.page.title,dictIdTitle[key], key,extractCtxW(w.page.links, w.page.categories), w.page.first_sentence)
+                dictDisplay[w.page.title]=p
+                dictSortCandidates[key] = [(sortCandidates[key][0], 1)]
+        else:
+            maxP = -1
+            maxagrument = 0
+            lemmaSynset = getLemmaForSynsets(dictIdTitle[key])
+            dictSortCandidates[key] = []
+            if lemmaSynset != "":
+                idWn = wn.get_senses(lemmaSynset)[0].id
+                if "N" in idWn: #почему-то иногда для синсета существительного сенс не существительное
+                    sense_embed = []
+                    for sense in wn.get_senses(lemmaSynset):
+                        sense_embed.append(model.get_vector(sense.name))
+                    sense_mean = sum(sense_embed)/len(sense_embed)
+                    for elem in sortCandidates[key]:
+                        wiki_synset_embed = []
+                        for wiki_synset in elem.synset:
+                            if "(" in wiki_synset.title:
+                                wiki_synset_embed.append(model.get_vector(wiki_synset.title.split("(")[0]))
+                            else:
+                                wiki_synset_embed.append(model.get_vector(wiki_synset.title))
+                            
+                        wiki_synset_mean = sum(wiki_synset_embed)/len(wiki_synset_embed)
+                        temp_distance = np.dot(sense_mean, wiki_synset_mean) / (sum(sense_mean ** 2) * sum(wiki_synset_mean ** 2))
+                        dictSortCandidates[key].append((elem, temp_distance))                           
+                        if  temp_distance > maxP:
+                            maxP = temp_distance
+                            maxagrument = elem
+                else:
+                    badidWn.append(wn.get_senses(lemmaSynset)[0].id)
+            else:
+                badsynsetlemma.append(dictIdTitle[key])
+            if maxP != - 1:
+                w = maxagrument
+                p = display(w.page.id,w.page.revid,w.page.title,dictIdTitle[key], key,
+                            extractCtxW(w.page.links, w.page.categories), w.page.first_sentence)
+                dictDisplay[w.page.title]=p
+            else:
+                badmaxP.append(key)   
+    return dictSortCandidates, dictDisplay, 0, 0, len(badmaxP), len(badsynsetlemma), len(badidWn)
+
+def stage_4_fasttext(model, dictDisplay):
+    #проведем похожий третьему этапу обор кандидатов
+    dict_wordId_in_display_and_key, dictDisplay = stage_4_preprocessing(dictDisplay)
+    i = 0
+    for key, value in tqdm(dict_wordId_in_display_and_key.items(), desc = "Stage 4"):
+        lemmaSynset = getLemmaForSynsets(wn[str(key)].title.lower())
+        if lemmaSynset:
+            idWn = wn.get_senses(lemmaSynset)[0].id 
+            if "N" in idWn:
+                maxP = -1
+                arg_max = 0
+                sense_embed = []
+                for sense in wn.get_senses(lemmaSynset):
+                    sense_embed.append(model.get_vector(sense.name))
+                sense_mean = sum(sense_embed)/len(sense_embed)
+                for elem in value:
+                    elem_embed = model.get_vector(elem[1].title)
+                    temp_distance = np.dot(sense_mean, elem_embed) / (sum(sense_mean ** 2) * sum(elem_embed ** 2))                          
+                    if  temp_distance > maxP:
+                        maxP = temp_distance
+                        arg_max = elem
+                if maxP != -1:
+                    dictDisplay[arg_max[0]] = arg_max[1]
+                else:
+                    i+=1
+    #                 print(f"denominator = 0 for all candidates for key:{key} synset is {wn[str(key)].title}")
+            else:
+                i+=1
+    #             print(f"lemma for key {key} is not noun, lemmaSynset is {lemmaSynset} for sysnet {wn[str(key)].title}")        
+        else:
+            i+=1
+    #         print(f"lemmaSynset for key {key} is none, synset is {wn[str(key)].title}")  
+    return dictDisplay
